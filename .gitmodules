@@ -1,0 +1,9 @@
+[submodule "nozzle"]
+	path = nozzle
+	url = git@github.com:nozzle-io/nozzle.git
+[submodule "libs/imgui"]
+	path = libs/imgui
+	url = https://github.com/ocornut/imgui.git
+[submodule "libs/glfw"]
+	path = libs/glfw
+	url = https://github.com/glfw/glfw.git
