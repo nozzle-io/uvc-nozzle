@@ -21,11 +21,8 @@ jobs:
       - name: Build
         run: cmake --build build --config Release
 
-      - name: Unit tests
-        run: ./build/uvc_tests "[capture]" --reporter compact
-
-      - name: Publisher tests
-        run: ./build/uvc_tests "[publisher]" --reporter compact || true
+      - name: Tests
+        run: ./build/uvc_tests --reporter compact
 
       - name: Build binary
         run: cmake --build build --config Release --target uvc-nozzle

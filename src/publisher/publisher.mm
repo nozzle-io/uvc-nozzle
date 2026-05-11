@@ -87,6 +87,7 @@ bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
 }
 
 void publisher::destroy() {
+    if (!impl_) return;
     impl_->sender.reset();
     if (impl_->mtl_device) {
         [impl_->mtl_device release];
