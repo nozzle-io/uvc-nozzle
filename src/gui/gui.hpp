@@ -36,6 +36,8 @@ private:
     void build_ui();
 
     GLFWwindow *window_{nullptr};
+    void *metal_device_{nullptr};
+    void *command_queue_{nullptr};
     std::vector<device_info> devices_;
     std::vector<capture_session> sessions_;
     std::mutex sessions_mutex_;

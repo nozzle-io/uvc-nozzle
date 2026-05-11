@@ -43,6 +43,8 @@ bool gui::init() {
         glfwTerminate();
         return false;
     }
+    metal_device_ = (void *)CFBridgingRetain(device);
+    command_queue_ = (void *)CFBridgingRetain([device newCommandQueue]);
 
     CAMetalLayer *layer = [CAMetalLayer layer];
     layer.device = device;
@@ -70,8 +72,8 @@ bool gui::init() {
 void gui::run() {
     running_ = true;
 
-    id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-    id<MTLCommandQueue> command_queue = [device newCommandQueue];
+    id<MTLDevice> device = (__bridge id<MTLDevice>)metal_device_;
+    id<MTLCommandQueue> command_queue = (__bridge id<MTLCommandQueue>)command_queue_;
 
     while (running_ && !glfwWindowShouldClose(window_)) {
         @autoreleasepool {
@@ -79,14 +81,6 @@ void gui::run() {
 
             int width, height;
             glfwGetFramebufferSize(window_, &width, &height);
-
-            ImGui_ImplGlfw_NewFrame();
-            ImGui_ImplMetal_NewFrame(nullptr);
-            ImGui::NewFrame();
-
-            build_ui();
-
-            ImGui::Render();
 
             NSWindow *ns_window = glfwGetCocoaWindow(window_);
             id<CAMetalDrawable> drawable = [(CAMetalLayer *)ns_window.contentView.layer nextDrawable];
@@ -100,6 +94,14 @@ void gui::run() {
             render_pass.colorAttachments[0].clearColor = MTLClearColorMake(0.1, 0.1, 0.1, 1.0);
             render_pass.colorAttachments[0].storeAction = MTLStoreActionStore;
 
+            ImGui_ImplGlfw_NewFrame();
+            ImGui_ImplMetal_NewFrame(render_pass);
+            ImGui::NewFrame();
+
+            build_ui();
+
+            ImGui::Render();
+
             id<MTLCommandBuffer> command_buffer = [command_queue commandBuffer];
             id<MTLRenderCommandEncoder> render_encoder = [command_buffer renderCommandEncoderWithDescriptor:render_pass];
 
@@ -112,8 +114,6 @@ void gui::run() {
             [command_buffer commit];
         }
     }
-
-    [command_queue release];
 }
 
 void gui::shutdown() {
@@ -137,6 +137,15 @@ void gui::shutdown() {
         glfwDestroyWindow(window_);
         glfwTerminate();
         window_ = nullptr;
+    }
+
+    if (command_queue_) {
+        CFRelease(command_queue_);
+        command_queue_ = nullptr;
+    }
+    if (metal_device_) {
+        CFRelease(metal_device_);
+        metal_device_ = nullptr;
     }
 }
 
