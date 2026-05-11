@@ -24,7 +24,14 @@
     <string>NSApplication</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSCameraUsageDescription</key>
+    <string>UVC Nozzle captures video from cameras to publish as shared GPU textures via nozzle.</string>
     <key>LSMinimumSystemVersion</key>
     <string>12.0</string>
+    <key>LSEnvironment</key>
+    <dict>
+        <key>UVC_NOZZLE_BUNDLE_LAUNCH</key>
+        <string>1</string>
+    </dict>
 </dict>
 </plist>

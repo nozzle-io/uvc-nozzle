@@ -39,8 +39,12 @@ std::vector<device_info> capture_device::enumerate() {
     std::vector<device_info> devices;
 
     @autoreleasepool {
+        NSArray *device_types = @[
+            AVCaptureDeviceTypeBuiltInWideAngleCamera,
+            AVCaptureDeviceTypeExternalUnknown
+        ];
         AVCaptureDeviceDiscoverySession *session = [AVCaptureDeviceDiscoverySession
-            discoverySessionWithDeviceTypes:@[AVCaptureDeviceTypeExternalUnknown]
+            discoverySessionWithDeviceTypes:device_types
             mediaType:AVMediaTypeVideo
             position:AVCaptureDevicePositionUnspecified];
 
@@ -58,8 +62,12 @@ std::vector<device_info> capture_device::enumerate() {
 bool capture_device::open(const device_info &dev) {
     @autoreleasepool {
         AVCaptureDevice *av_device = nil;
+        NSArray *device_types = @[
+            AVCaptureDeviceTypeBuiltInWideAngleCamera,
+            AVCaptureDeviceTypeExternalUnknown
+        ];
         AVCaptureDeviceDiscoverySession *session = [AVCaptureDeviceDiscoverySession
-            discoverySessionWithDeviceTypes:@[AVCaptureDeviceTypeExternalUnknown]
+            discoverySessionWithDeviceTypes:device_types
             mediaType:AVMediaTypeVideo
             position:AVCaptureDevicePositionUnspecified];
 

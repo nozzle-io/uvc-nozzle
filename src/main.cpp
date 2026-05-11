@@ -4,9 +4,9 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
 #include <csignal>
 #include <cstdio>
-#include <cstring>
 #include <string>
 #include <thread>
 #include <vector>
@@ -184,6 +184,24 @@ int main(int argc, char *argv[]) {
 
     if (device_index >= 0) {
         return run_cli(device_index, sender_name, width, height, fps);
+    }
+
+    // No explicit mode - detect launch context.
+    // LSEnvironment in Info.plist sets UVC_NOZZLE_BUNDLE_LAUNCH when
+    // launched via LaunchServices (Finder double-click, `open` command).
+    // Terminal launches have TERM set.
+    bool launched_from_ls = std::getenv("UVC_NOZZLE_BUNDLE_LAUNCH") != nullptr;
+    bool in_terminal = std::getenv("TERM") != nullptr;
+
+    if (launched_from_ls || !in_terminal) {
+        uvc::gui app;
+        if (!app.init()) {
+            std::fprintf(stderr, "Failed to initialize GUI.\n");
+            return 1;
+        }
+        app.run();
+        app.shutdown();
+        return 0;
     }
 
     print_usage(argv[0]);

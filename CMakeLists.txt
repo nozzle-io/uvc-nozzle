@@ -47,7 +47,8 @@ add_executable(uvc-nozzle MACOSX_BUNDLE
     src/main.cpp
     src/capture/platform/macos/capture_device.mm
     src/publisher/publisher.mm
-    src/gui/gui.mm
+    src/gui/gui.cpp
+    src/gui/platform/macos/render_backend_metal.mm
 )
 
 target_include_directories(uvc-nozzle PRIVATE
