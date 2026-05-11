@@ -71,3 +71,42 @@ target_link_libraries(uvc-nozzle PRIVATE
 set_target_properties(uvc-nozzle PROPERTIES
     MACOSX_DEPLOYMENT_TARGET 12.0
 )
+
+option(UVC_BUILD_TESTS "Build unit tests" ON)
+
+if(UVC_BUILD_TESTS)
+    include(FetchContent)
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG v3.6.0
+    )
+    FetchContent_MakeAvailable(Catch2)
+
+    add_executable(uvc_tests
+        tests/test_main.cpp
+        src/capture/platform/macos/capture_device.mm
+        src/publisher/publisher.mm
+    )
+
+    target_include_directories(uvc_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}/nozzle/include
+    )
+
+    target_link_libraries(uvc_tests PRIVATE
+        nozzle
+        Catch2::Catch2WithMain
+        ${METAL_FRAMEWORK}
+        ${FOUNDATION_FRAMEWORK}
+        ${AVFOUNDATION_FRAMEWORK}
+        ${COREVIDEO_FRAMEWORK}
+        ${COREMEDIA_FRAMEWORK}
+        ${APPKIT_FRAMEWORK}
+        ${IOSURFACE_FRAMEWORK}
+    )
+
+    include(CTest)
+    include(Catch)
+    catch_discover_tests(uvc_tests)
+endif()

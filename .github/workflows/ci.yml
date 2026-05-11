@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: cmake -B build -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0
+
+      - name: Build
+        run: cmake --build build --config Release
+
+      - name: Unit tests
+        run: ./build/uvc_tests "[capture]" --reporter compact
+
+      - name: Publisher tests
+        run: ./build/uvc_tests "[publisher]" --reporter compact || true
+
+      - name: Build binary
+        run: cmake --build build --config Release --target uvc-nozzle
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: uvc-nozzle-macos-arm64
+          path: build/uvc-nozzle
+
+  release:
+    needs: build-macos
+    if: github.event_name == 'push'
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: uvc-nozzle-macos-arm64
+          path: ./artifact
+
+      - name: Package
+        run: |
+          chmod +x ./artifact/uvc-nozzle
+          cd artifact
+          zip ../uvc-nozzle-macos-arm64.zip uvc-nozzle
+
+      - name: Get release tag
+        id: tag
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Delete old latest release
+        if: steps.tag.outputs.tag == 'latest'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete latest --yes || true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [[ "${{ steps.tag.outputs.tag }}" == "latest" ]]; then
+            gh release create latest uvc-nozzle-macos-arm64.zip \
+              --title "Latest Build" \
+              --prerelease \
+              --notes "Automated latest build from main"
+          else
+            gh release create "${{ steps.tag.outputs.tag }}" uvc-nozzle-macos-arm64.zip \
+              --title "${{ steps.tag.outputs.tag }}" \
+              --notes "Release ${{ steps.tag.outputs.tag }}"
+          fi
