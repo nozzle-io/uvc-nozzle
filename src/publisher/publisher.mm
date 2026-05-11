@@ -2,15 +2,15 @@
 
 #include <nozzle/nozzle_c.h>
 
+#import <Metal/Metal.h>
+#import <IOSurface/IOSurface.h>
 #include <CoreVideo/CoreVideo.h>
-
-#include <cstring>
 
 namespace uvc {
 
 struct publisher::impl {
 	NozzleSender *sender{nullptr};
-	uint32_t ring_size{3};
+	id<MTLDevice> mtl_device{nil};
 };
 
 publisher::publisher() : impl_(std::make_unique<impl>()) {}
@@ -29,69 +29,58 @@ publisher &publisher::operator=(publisher &&other) noexcept {
 }
 
 bool publisher::create(const std::string &name, uint32_t ring_buffer_size) {
-	impl_->ring_size = ring_buffer_size;
+	@autoreleasepool {
+		impl_->mtl_device = MTLCreateSystemDefaultDevice();
+		if (!impl_->mtl_device) return false;
 
-	NozzleSenderDesc desc{};
-	desc.name = name.c_str();
-	desc.application_name = "uvc-nozzle";
-	desc.ring_buffer_size = ring_buffer_size;
+		NozzleSenderDesc desc{};
+		desc.name = name.c_str();
+		desc.application_name = "uvc-nozzle";
+		desc.ring_buffer_size = ring_buffer_size;
 
-	NozzleErrorCode err = nozzle_sender_create(&desc, &impl_->sender);
-	if (err != NOZZLE_OK) {
-		impl_->sender = nullptr;
-		return false;
+		NozzleErrorCode err = nozzle_sender_create(&desc, &impl_->sender);
+		if (err != NOZZLE_OK) {
+			impl_->sender = nullptr;
+			return false;
+		}
+
+		return true;
 	}
-
-	return true;
 }
 
-// AVFoundation CVPixelBuffer IOSurfaces lack kIOSurfaceIsGlobal,
-// so IOSurfaceLookup fails cross-process. Must copy to nozzle-owned
-// ring buffer IOSurfaces (which have kIOSurfaceIsGlobal: YES).
 bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
 	if (!impl_->sender || !pixel_buffer) {
 		return false;
 	}
 
-	CVPixelBufferRef cv_buffer = static_cast<CVPixelBufferRef>(pixel_buffer);
-	CVPixelBufferLockBaseAddress(cv_buffer, 0);
-	void *base = CVPixelBufferGetBaseAddress(cv_buffer);
-	if (!base) {
-		CVPixelBufferUnlockBaseAddress(cv_buffer, 0);
-		return false;
+	@autoreleasepool {
+		CVPixelBufferRef cv_buffer = static_cast<CVPixelBufferRef>(pixel_buffer);
+		IOSurfaceRef io_surface = CVPixelBufferGetIOSurface(cv_buffer);
+		if (!io_surface) return false;
+
+		MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
+		desc.textureType = MTLTextureType2D;
+		desc.pixelFormat = MTLPixelFormatBGRA8Unorm;
+		desc.width = w;
+		desc.height = h;
+		desc.mipmapLevelCount = 1;
+		desc.arrayLength = 1;
+		desc.sampleCount = 1;
+		desc.usage = MTLTextureUsageShaderRead;
+		desc.storageMode = MTLStorageModeShared;
+
+		id<MTLTexture> texture = [impl_->mtl_device newTextureWithDescriptor:desc
+		                                                             iosurface:io_surface
+	                                                                    plane:0];
+		[desc release];
+
+		if (!texture) return false;
+
+		NozzleErrorCode err = nozzle_sender_publish_native_texture(
+			impl_->sender, (__bridge void *)texture, w, h, NOZZLE_FORMAT_BGRA8_UNORM);
+
+		return err == NOZZLE_OK;
 	}
-
-	size_t src_stride = CVPixelBufferGetBytesPerRow(cv_buffer);
-
-	NozzleFrame *frame = nullptr;
-	NozzleErrorCode err = nozzle_sender_acquire_writable_frame(
-		impl_->sender, w, h, NOZZLE_FORMAT_BGRA8_UNORM, &frame);
-
-	if (err != NOZZLE_OK || !frame) {
-		CVPixelBufferUnlockBaseAddress(cv_buffer, 0);
-		return false;
-	}
-
-	NozzleMappedPixels pixels;
-	err = nozzle_frame_lock_writable_pixels_with_origin(
-		frame, NOZZLE_ORIGIN_TOP_LEFT, &pixels);
-	if (err == NOZZLE_OK) {
-		uint32_t copy_bytes = w * 4;
-		auto *src = static_cast<const uint8_t *>(base);
-		auto *dst = static_cast<uint8_t *>(pixels.data);
-
-		for (uint32_t y = 0; y < h; ++y) {
-			std::memcpy(dst + static_cast<size_t>(y) * pixels.row_stride_bytes,
-						src + y * src_stride,
-						copy_bytes);
-		}
-
-		nozzle_frame_unlock_writable_pixels(frame);
-	}
-
-	nozzle_sender_commit_frame(impl_->sender, frame);
-	CVPixelBufferUnlockBaseAddress(cv_buffer, 0);
-	return true;
 }
 
 void publisher::destroy() {
@@ -99,6 +88,9 @@ void publisher::destroy() {
 	if (impl_->sender) {
 		nozzle_sender_destroy(impl_->sender);
 		impl_->sender = nullptr;
+	}
+	@autoreleasepool {
+		impl_->mtl_device = nil;
 	}
 }
 
