@@ -43,7 +43,7 @@ target_link_libraries(imgui PRIVATE
     ${APPKIT_FRAMEWORK}
 )
 
-add_executable(uvc-nozzle
+add_executable(uvc-nozzle MACOSX_BUNDLE
     src/main.cpp
     src/capture/platform/macos/capture_device.mm
     src/publisher/publisher.mm
@@ -70,6 +70,11 @@ target_link_libraries(uvc-nozzle PRIVATE
 
 set_target_properties(uvc-nozzle PROPERTIES
     MACOSX_DEPLOYMENT_TARGET 12.0
+    MACOSX_BUNDLE_GUI_IDENTIFIER "io.nozzle.uvc-nozzle"
+    MACOSX_BUNDLE_BUNDLE_NAME "uvc-nozzle"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+    MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/Info.plist.in"
 )
 
 option(UVC_BUILD_TESTS "Build unit tests" ON)

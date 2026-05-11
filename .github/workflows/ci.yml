@@ -28,13 +28,13 @@ jobs:
         run: cmake --build build --config Release --target uvc-nozzle
 
       - name: Verify universal binary
-        run: lipo -archs build/uvc-nozzle
+        run: lipo -archs build/uvc-nozzle.app/Contents/MacOS/uvc-nozzle
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: uvc-nozzle-macos-universal
-          path: build/uvc-nozzle
+          path: build/uvc-nozzle.app
 
   release:
     needs: build-macos
@@ -50,9 +50,8 @@ jobs:
 
       - name: Package
         run: |
-          chmod +x ./artifact/uvc-nozzle
           cd artifact
-          zip ../uvc-nozzle-macos-universal.zip uvc-nozzle
+          zip -r ../uvc-nozzle-macos-universal.zip uvc-nozzle.app
 
       - name: Get release tag
         id: tag

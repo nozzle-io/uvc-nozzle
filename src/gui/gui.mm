@@ -12,6 +12,7 @@
 #define GLFW_EXPOSE_NATIVE_COCOA
 #include <GLFW/glfw3native.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 
@@ -196,15 +197,34 @@ void gui::build_ui() {
 
     {
         std::lock_guard<std::mutex> lock(sessions_mutex_);
-        bool any_running = false;
-        for (const auto &s : sessions_) {
-            if (s.running) {
-                any_running = true;
-                ImGui::Text("Capturing -> nozzle://%s", s.sender_name.c_str());
+
+        // Remove stopped sessions
+        sessions_.erase(
+            std::remove_if(sessions_.begin(), sessions_.end(),
+                [](const capture_session &s) { return !s.running; }),
+            sessions_.end());
+
+        // Per-session status + individual Stop buttons
+        for (size_t i = 0; i < sessions_.size(); i++) {
+            ImGui::PushID(static_cast<int>(i));
+            ImGui::Text("-> nozzle://%s", sessions_[i].sender_name.c_str());
+            ImGui::SameLine();
+            if (ImGui::Button("Stop")) {
+                sessions_[i].device->stop();
+                sessions_[i].pub->destroy();
+                sessions_[i].running = false;
             }
+            ImGui::PopID();
         }
 
-        if (any_running) {
+        ImGui::Separator();
+
+        // Stop All when multiple sessions running
+        int running_count = 0;
+        for (const auto &s : sessions_) {
+            if (s.running) running_count++;
+        }
+        if (running_count >= 2) {
             if (ImGui::Button("Stop All", ImVec2(120, 0))) {
                 for (auto &s : sessions_) {
                     if (s.running) {
@@ -214,7 +234,21 @@ void gui::build_ui() {
                     }
                 }
             }
-        } else {
+            ImGui::SameLine();
+        }
+
+        // Start button: check if selected device is already running
+        bool already_running = false;
+        if (selected_device_idx < static_cast<int>(devices_.size())) {
+            for (const auto &s : sessions_) {
+                if (s.running) {
+                    already_running = true;
+                    break;
+                }
+            }
+        }
+
+        if (!already_running && selected_device_idx < static_cast<int>(devices_.size())) {
             if (ImGui::Button("Start", ImVec2(120, 0))) {
                 auto dev = create_capture_device();
                 if (dev->open(devices_[selected_device_idx])) {

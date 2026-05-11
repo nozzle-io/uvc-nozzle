@@ -171,18 +171,21 @@ int main(int argc, char *argv[]) {
         return list_devices();
     }
 
-    if (!force_gui && device_index >= 0) {
+    if (force_gui) {
+        uvc::gui app;
+        if (!app.init()) {
+            std::fprintf(stderr, "Failed to initialize GUI.\n");
+            return 1;
+        }
+        app.run();
+        app.shutdown();
+        return 0;
+    }
+
+    if (device_index >= 0) {
         return run_cli(device_index, sender_name, width, height, fps);
     }
 
-    uvc::gui app;
-    if (!app.init()) {
-        std::fprintf(stderr, "Failed to initialize GUI.\n");
-        return 1;
-    }
-
-    app.run();
-    app.shutdown();
-
+    print_usage(argv[0]);
     return 0;
 }
