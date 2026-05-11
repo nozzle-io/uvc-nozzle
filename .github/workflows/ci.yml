@@ -64,7 +64,7 @@ jobs:
         if: steps.tag.outputs.tag == 'latest'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release delete latest --yes || true
+        run: gh release delete latest --yes --repo ${{ github.repository }} || true
 
       - name: Create release
         env:
@@ -72,11 +72,13 @@ jobs:
         run: |
           if [[ "${{ steps.tag.outputs.tag }}" == "latest" ]]; then
             gh release create latest uvc-nozzle-macos-arm64.zip \
+              --repo ${{ github.repository }} \
               --title "Latest Build" \
               --prerelease \
               --notes "Automated latest build from main"
           else
             gh release create "${{ steps.tag.outputs.tag }}" uvc-nozzle-macos-arm64.zip \
+              --repo ${{ github.repository }} \
               --title "${{ steps.tag.outputs.tag }}" \
               --notes "Release ${{ steps.tag.outputs.tag }}"
           fi
