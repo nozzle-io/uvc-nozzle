@@ -30,6 +30,9 @@ jobs:
       - name: Verify universal binary
         run: lipo -archs build/uvc-nozzle.app/Contents/MacOS/uvc-nozzle
 
+      - name: Codesign
+        run: codesign --force --deep --sign - build/uvc-nozzle.app
+
       - name: Package
         run: cd build && zip -r ../uvc-nozzle-macos-universal.zip uvc-nozzle.app
 
