@@ -30,11 +30,14 @@ jobs:
       - name: Verify universal binary
         run: lipo -archs build/uvc-nozzle.app/Contents/MacOS/uvc-nozzle
 
+      - name: Package
+        run: cd build && zip -r ../uvc-nozzle-macos-universal.zip uvc-nozzle.app
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: uvc-nozzle-macos-universal
-          path: build/uvc-nozzle.app
+          path: uvc-nozzle-macos-universal.zip
 
   release:
     needs: build-macos
@@ -46,12 +49,6 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: uvc-nozzle-macos-universal
-          path: ./artifact
-
-      - name: Package
-        run: |
-          cd artifact
-          zip -r ../uvc-nozzle-macos-universal.zip uvc-nozzle.app
 
       - name: Get release tag
         id: tag
