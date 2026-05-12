@@ -79,6 +79,7 @@ bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
 		NozzleErrorCode err = nozzle_sender_publish_native_texture(
 			impl_->sender, (__bridge void *)texture, w, h, NOZZLE_FORMAT_BGRA8_UNORM);
 
+		[texture release];
 		return err == NOZZLE_OK;
 	}
 }
