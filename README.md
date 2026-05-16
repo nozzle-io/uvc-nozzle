@@ -1,6 +1,6 @@
 # uvc-nozzle
 
-UVC camera capture to [nozzle](https://github.com/nozzle-io/nozzle) GPU texture sharing. Capture from USB video devices and publish as shared Metal textures that any nozzle receiver can access.
+UVC camera capture to [nozzle](https://github.com/nozzle-io/nozzle) GPU texture sharing. Capture from USB video devices and publish as shared GPU textures that any nozzle receiver can access. Cross-platform: macOS (Metal/IOSurface), Windows (D3D11), Linux (DMA-BUF).
 
 ## Modes
 
@@ -51,14 +51,22 @@ cmake --build build
 ./build/uvc_tests --reporter compact
 ```
 
-### Build for distribution
+### macOS distribution build
 
 ```bash
 cmake -B build -DCMAKE_OSX_DEPLOYMENT_TARGET=12.0 -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
 cmake --build build
 ```
 
+### Linux dependencies
+
+```bash
+sudo apt-get install libgl1-mesa-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxxf86vm-dev
+```
+
 ## Architecture
+
+### macOS
 
 ```
 AVFoundation UVC capture
@@ -70,7 +78,29 @@ nozzle::sender (Metal/IOSurface backend)
 any nozzle receiver
 ```
 
-Cross-platform abstraction via `capture_device` interface. macOS implementation in `src/capture/platform/macos/`. Windows and Linux paths ready.
+### Windows
+
+```
+Media Foundation UVC capture
+    ↓ IMFMediaBuffer (BGRA)
+    ↓ CPU upload
+nozzle::sender (D3D11 backend, acquire_writable_frame)
+    ↓ shared GPU texture
+any nozzle receiver
+```
+
+### Linux
+
+```
+V4L2 UVC capture (mmap)
+    ↓ BGRA pixel data (YUYV→BGRA conversion if needed)
+    ↓ CPU upload
+nozzle::sender (DMA-BUF backend, acquire_writable_frame)
+    ↓ shared GPU texture
+any nozzle receiver
+```
+
+Cross-platform abstraction via `capture_device` and `render_backend` interfaces. Platform implementations in `src/capture/platform/` and `src/gui/platform/`.
 
 ## Dependencies
 

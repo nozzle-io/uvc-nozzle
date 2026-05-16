@@ -33,7 +33,9 @@ bool gui::init() {
     int win_w = std::min(static_cast<int>(k_window_default_w), mode->width * 2 / 3);
     int win_h = std::min(static_cast<int>(k_window_default_h), mode->height * 2 / 3);
 
+#if !defined(__linux__)
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+#endif
     glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
     window_ = glfwCreateWindow(win_w, win_h, "uvc-nozzle", nullptr, nullptr);
