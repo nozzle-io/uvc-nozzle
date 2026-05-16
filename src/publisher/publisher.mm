@@ -84,6 +84,10 @@ bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
 	}
 }
 
+void *publisher::get_native_device() const {
+	return nullptr;
+}
+
 void publisher::destroy() {
 	if (!impl_) return;
 	if (impl_->sender) {

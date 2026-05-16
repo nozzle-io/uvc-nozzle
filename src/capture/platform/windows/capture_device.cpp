@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <windows.h>
+#include <d3d11.h>
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mfreadwrite.h>
@@ -21,6 +22,7 @@
 #pragma comment(lib, "mfuuid.lib")
 #pragma comment(lib, "strmiids.lib")
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "dxgi.lib")
 
 namespace uvc {
 
@@ -40,6 +42,11 @@ struct capture_device::impl {
 	IMFMediaSource *source{nullptr};
 	IMFSourceReader *reader{nullptr};
 
+	ID3D11Device *d3d11_device{nullptr};
+	IMFDXGIDeviceManager *dxgi_manager{nullptr};
+	UINT reset_token{0};
+	bool gpu_mode{false};
+
 	std::atomic<bool> capturing{false};
 	std::thread capture_thread;
 	std::vector<uint8_t> frame_buffer;
@@ -51,6 +58,11 @@ struct capture_device::impl {
 		stop_capture();
 		safe_release(reader);
 		safe_release(source);
+		safe_release(dxgi_manager);
+		if (d3d11_device) {
+			d3d11_device->Release();
+			d3d11_device = nullptr;
+		}
 		MFShutdown();
 	}
 
@@ -208,14 +220,18 @@ bool capture_device::open(const device_info &dev) {
 
 	IMFSourceReader *reader = nullptr;
 	IMFAttributes *reader_attrs = nullptr;
-	hr = MFCreateAttributes(&reader_attrs, 1);
+	hr = MFCreateAttributes(&reader_attrs, 2);
 	if (FAILED(hr)) {
 		found_source->Release();
 		MFShutdown();
 		return false;
 	}
 
-	reader_attrs->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE);
+	if (impl_->gpu_mode && impl_->dxgi_manager) {
+		reader_attrs->SetUnknown(MF_SOURCE_READER_D3D_MANAGER, impl_->dxgi_manager);
+	} else {
+		reader_attrs->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE);
+	}
 
 	hr = MFCreateSourceReaderFromMediaSource(found_source, reader_attrs, &reader);
 	reader_attrs->Release();
@@ -338,6 +354,26 @@ bool capture_device::start(std::function<void(void *pixel_buffer, uint32_t w, ui
 				continue;
 			}
 
+			if (impl_->gpu_mode) {
+				IMFMediaBuffer *buffer = nullptr;
+				hr = sample->GetBufferByIndex(0, &buffer);
+				if (SUCCEEDED(hr) && buffer) {
+					IMFDXGIBuffer *dxgi_buffer = nullptr;
+					hr = buffer->QueryInterface(IID_PPV_ARGS(&dxgi_buffer));
+					if (SUCCEEDED(hr) && dxgi_buffer) {
+						ID3D11Texture2D *texture = nullptr;
+						hr = dxgi_buffer->GetResource(IID_PPV_ARGS(&texture));
+						if (SUCCEEDED(hr) && texture) {
+							cb(texture, impl_->configured_width, impl_->configured_height);
+							texture->Release();
+						}
+						dxgi_buffer->Release();
+					}
+					buffer->Release();
+				}
+				continue;
+			}
+
 			IMFMediaBuffer *buffer = nullptr;
 			hr = sample->ConvertToContiguousBuffer(&buffer);
 			if (FAILED(hr) || !buffer) {
@@ -373,6 +409,38 @@ void capture_device::stop() {
 	if (impl_) {
 		impl_->stop_capture();
 	}
+}
+
+void capture_device::set_gpu_device(void *device) {
+	if (!device) {
+		return;
+	}
+
+	safe_release(impl_->dxgi_manager);
+	if (impl_->d3d11_device) {
+		impl_->d3d11_device->Release();
+		impl_->d3d11_device = nullptr;
+	}
+
+	impl_->d3d11_device = static_cast<ID3D11Device *>(device);
+	impl_->d3d11_device->AddRef();
+
+	HRESULT hr = MFCreateDXGIDeviceManager(&impl_->reset_token, &impl_->dxgi_manager);
+	if (FAILED(hr)) {
+		impl_->d3d11_device->Release();
+		impl_->d3d11_device = nullptr;
+		return;
+	}
+
+	hr = impl_->dxgi_manager->ResetDevice(impl_->d3d11_device, impl_->reset_token);
+	if (FAILED(hr)) {
+		safe_release(impl_->dxgi_manager);
+		impl_->d3d11_device->Release();
+		impl_->d3d11_device = nullptr;
+		return;
+	}
+
+	impl_->gpu_mode = true;
 }
 
 std::vector<format_info> capture_device::available_formats() const {

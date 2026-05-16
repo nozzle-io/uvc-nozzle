@@ -1,13 +1,37 @@
 #include <publisher/publisher.hpp>
 
+#define WIN32_LEAN_AND_MEAN
+#include <d3d11.h>
+#include <d3d10_1.h>
+
 #include <nozzle/nozzle_c.h>
 
 #include <cstring>
+
+#pragma comment(lib, "d3d11.lib")
+#pragma comment(lib, "dxgi.lib")
 
 namespace uvc {
 
 struct publisher::impl {
 	NozzleSender *sender{nullptr};
+	ID3D11Device *d3d_device{nullptr};
+	ID3D11DeviceContext *d3d_context{nullptr};
+
+	void release_resources() {
+		if (sender) {
+			nozzle_sender_destroy(sender);
+			sender = nullptr;
+		}
+		if (d3d_context) {
+			d3d_context->Release();
+			d3d_context = nullptr;
+		}
+		if (d3d_device) {
+			d3d_device->Release();
+			d3d_device = nullptr;
+		}
+	}
 };
 
 publisher::publisher() : impl_(std::make_unique<impl>()) {}
@@ -26,14 +50,44 @@ publisher &publisher::operator=(publisher &&other) noexcept {
 }
 
 bool publisher::create(const std::string &name, uint32_t ring_buffer_size) {
+	UINT create_flags = D3D11_CREATE_DEVICE_VIDEO_SUPPORT | D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+
+	D3D_FEATURE_LEVEL feature_level{};
+	HRESULT hr = D3D11CreateDevice(
+		nullptr,
+		D3D_DRIVER_TYPE_HARDWARE,
+		nullptr,
+		create_flags,
+		nullptr,
+		0,
+		D3D11_SDK_VERSION,
+		&impl_->d3d_device,
+		&feature_level,
+		&impl_->d3d_context
+	);
+
+	if (FAILED(hr)) return false;
+
+	ID3D10Multithread *multithread = nullptr;
+	hr = impl_->d3d_device->QueryInterface(__uuidof(ID3D10Multithread),
+	                                       reinterpret_cast<void **>(&multithread));
+	if (SUCCEEDED(hr) && multithread) {
+		multithread->SetMultithreadProtected(TRUE);
+		multithread->Release();
+	}
+
 	NozzleSenderDesc desc{};
 	desc.name = name.c_str();
 	desc.application_name = "uvc-nozzle";
 	desc.ring_buffer_size = ring_buffer_size;
+	desc.native_device.backend = NOZZLE_BACKEND_D3D11;
+	desc.native_device.device = impl_->d3d_device;
+	desc.native_device.context = impl_->d3d_context;
 
 	NozzleErrorCode err = nozzle_sender_create(&desc, &impl_->sender);
 	if (err != NOZZLE_OK) {
 		impl_->sender = nullptr;
+		impl_->release_resources();
 		return false;
 	}
 
@@ -41,8 +95,13 @@ bool publisher::create(const std::string &name, uint32_t ring_buffer_size) {
 }
 
 bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
-	if (!impl_->sender || !pixel_buffer) {
-		return false;
+	if (!impl_->sender || !pixel_buffer) return false;
+
+	auto *d3d_texture = static_cast<ID3D11Texture2D *>(pixel_buffer);
+	if (d3d_texture) {
+		NozzleErrorCode err = nozzle_sender_publish_native_texture(
+			impl_->sender, d3d_texture, w, h, NOZZLE_FORMAT_BGRA8_UNORM);
+		if (err == NOZZLE_OK) return true;
 	}
 
 	NozzleFrame *frame = nullptr;
@@ -78,15 +137,12 @@ bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
 }
 
 void *publisher::get_native_device() const {
-	return nullptr;
+	return impl_ ? impl_->d3d_device : nullptr;
 }
 
 void publisher::destroy() {
 	if (!impl_) return;
-	if (impl_->sender) {
-		nozzle_sender_destroy(impl_->sender);
-		impl_->sender = nullptr;
-	}
+	impl_->release_resources();
 }
 
 } // namespace uvc

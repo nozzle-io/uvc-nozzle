@@ -20,6 +20,8 @@ public:
     bool publish_frame(void *pixel_buffer, uint32_t w, uint32_t h);
     void destroy();
 
+    void *get_native_device() const;
+
 private:
     struct impl;
     std::unique_ptr<impl> impl_;

@@ -208,16 +208,16 @@ void gui::build_ui() {
 
         if (!already_running && selected_device_idx < static_cast<int>(devices_.size())) {
             if (ImGui::Button("Add Device")) {
-                auto dev = create_capture_device();
-                if (dev->open(devices_[selected_device_idx])) {
-                    auto fmt = dev->default_format();
-                    dev->configure(fmt);
+                auto pub = std::make_unique<publisher>();
+                std::string name(sender_name_buf[0]
+                    ? sender_name_buf : devices_[selected_device_idx].name);
 
-                    auto pub = std::make_unique<publisher>();
-                    std::string name(sender_name_buf[0]
-                        ? sender_name_buf : devices_[selected_device_idx].name);
-
-                    if (pub->create(name)) {
+                if (pub->create(name)) {
+                    auto dev = create_capture_device();
+                    dev->set_gpu_device(pub->get_native_device());
+                    if (dev->open(devices_[selected_device_idx])) {
+                        auto fmt = dev->default_format();
+                        dev->configure(fmt);
                         void *preview_tex =
                             backend_->create_preview_texture(fmt.width, fmt.height);
 

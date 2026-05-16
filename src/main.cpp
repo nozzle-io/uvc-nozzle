@@ -62,17 +62,18 @@ static int run_cli(int device_index, const std::string &sender_name,
     std::signal(SIGINT, signal_handler);
     std::signal(SIGTERM, signal_handler);
 
-    auto capture = uvc::create_capture_device();
-    if (!capture->open(devices[device_index])) {
-        std::fprintf(stderr, "Failed to open device: %s\n", devices[device_index].name.c_str());
-        return 1;
-    }
-
     std::string name = sender_name.empty() ? devices[device_index].name : sender_name;
 
     auto pub = std::make_unique<uvc::publisher>();
     if (!pub->create(name)) {
         std::fprintf(stderr, "Failed to create nozzle sender: %s\n", name.c_str());
+        return 1;
+    }
+
+    auto capture = uvc::create_capture_device();
+    capture->set_gpu_device(pub->get_native_device());
+    if (!capture->open(devices[device_index])) {
+        std::fprintf(stderr, "Failed to open device: %s\n", devices[device_index].name.c_str());
         return 1;
     }
 

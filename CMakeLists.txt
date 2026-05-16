@@ -76,7 +76,8 @@ set(UVC_CAPTURE_SRC
 
 set(UVC_PUBLISHER_SRC
     $<$<PLATFORM_ID:Darwin>:src/publisher/publisher.mm>
-    $<$<NOT:$<PLATFORM_ID:Darwin>>:src/publisher/publisher.cpp>
+    $<$<PLATFORM_ID:Windows>:src/publisher/publisher_win.cpp>
+    $<$<PLATFORM_ID:Linux>:src/publisher/publisher.cpp>
 )
 
 set(UVC_GUI_BACKEND_SRC
@@ -159,7 +160,8 @@ if(UVC_BUILD_TESTS)
 
     set(UVC_TEST_PUBLISHER_SRC
         $<$<PLATFORM_ID:Darwin>:src/publisher/publisher.mm>
-        $<$<NOT:$<PLATFORM_ID:Darwin>>:src/publisher/publisher.cpp>
+        $<$<PLATFORM_ID:Windows>:src/publisher/publisher_win.cpp>
+        $<$<PLATFORM_ID:Linux>:src/publisher/publisher.cpp>
     )
 
     add_executable(uvc_tests

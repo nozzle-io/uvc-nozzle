@@ -133,6 +133,9 @@ void capture_device::stop() {
     }
 }
 
+void capture_device::set_gpu_device(void *) {
+}
+
 std::vector<format_info> capture_device::available_formats() const {
     return impl_->formats;
 }
