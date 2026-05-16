@@ -8,6 +8,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <string>
+#include <unistd.h>
 
 namespace uvc {
 
@@ -86,7 +88,27 @@ public:
 	}
 
 	const char *get_system_font_path() override {
-		return "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+		static std::string cached;
+		if (!cached.empty()) return cached.c_str();
+
+		const char *candidates[] = {
+			"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+			"/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+			"/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+			"/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+			"/usr/share/fonts/opentype/droid/DroidSansFallbackFull.ttf",
+			"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+		};
+
+		for (const char *p : candidates) {
+			if (access(p, F_OK) == 0) {
+				cached = p;
+				return cached.c_str();
+			}
+		}
+
+		cached = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf";
+		return cached.c_str();
 	}
 
 private:
