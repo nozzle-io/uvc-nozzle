@@ -80,11 +80,14 @@ bool publisher::create(const std::string &name, uint32_t ring_buffer_size) {
 	desc.name = name.c_str();
 	desc.application_name = "uvc-nozzle";
 	desc.ring_buffer_size = ring_buffer_size;
-	desc.native_device.backend = NOZZLE_BACKEND_D3D11;
-	desc.native_device.device = impl_->d3d_device;
-	desc.native_device.context = impl_->d3d_context;
 
-	NozzleErrorCode err = nozzle_sender_create(&desc, &impl_->sender);
+	NozzleNativeDevice native_dev{};
+	native_dev.backend = NOZZLE_BACKEND_D3D11;
+	native_dev.device = impl_->d3d_device;
+	native_dev.context = impl_->d3d_context;
+
+	NozzleErrorCode err = nozzle_sender_create_with_native_device(
+		&desc, &native_dev, &impl_->sender);
 	if (err != NOZZLE_OK) {
 		impl_->sender = nullptr;
 		impl_->release_resources();
