@@ -97,15 +97,8 @@ bool publisher::create(const std::string &name, uint32_t ring_buffer_size) {
 	return true;
 }
 
-bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
-	if (!impl_->sender || !pixel_buffer) return false;
-
-	auto *d3d_texture = static_cast<ID3D11Texture2D *>(pixel_buffer);
-	if (d3d_texture) {
-		NozzleErrorCode err = nozzle_sender_publish_native_texture(
-			impl_->sender, d3d_texture, w, h, NOZZLE_FORMAT_BGRA8_UNORM);
-		if (err == NOZZLE_OK) return true;
-	}
+bool publisher::publish_frame(const void *pixel_data, uint32_t w, uint32_t h) {
+	if (!impl_->sender || !pixel_data) return false;
 
 	NozzleFrame *frame = nullptr;
 	NozzleErrorCode err = nozzle_sender_acquire_writable_frame(
@@ -121,7 +114,7 @@ bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
 	}
 
 	const uint32_t src_row_bytes = w * 4;
-	const auto *src = static_cast<const uint8_t *>(pixel_buffer);
+	const auto *src = static_cast<const uint8_t *>(pixel_data);
 	auto *dst = static_cast<uint8_t *>(pixels.data);
 
 	if (pixels.row_stride_bytes == static_cast<int64_t>(src_row_bytes)) {
@@ -136,6 +129,15 @@ bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
 
 	nozzle_frame_unlock_writable_pixels(frame);
 	err = nozzle_sender_commit_frame(impl_->sender, frame);
+	return err == NOZZLE_OK;
+}
+
+bool publisher::publish_native_frame(void *native_texture, uint32_t w, uint32_t h) {
+	if (!impl_->sender || !native_texture) return false;
+
+	auto *d3d_texture = static_cast<ID3D11Texture2D *>(native_texture);
+	NozzleErrorCode err = nozzle_sender_publish_native_texture(
+		impl_->sender, d3d_texture, w, h, NOZZLE_FORMAT_BGRA8_UNORM);
 	return err == NOZZLE_OK;
 }
 

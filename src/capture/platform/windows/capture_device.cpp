@@ -411,9 +411,9 @@ void capture_device::stop() {
 	}
 }
 
-void capture_device::set_gpu_device(void *device) {
+bool capture_device::set_gpu_device(void *device) {
 	if (!device) {
-		return;
+		return false;
 	}
 
 	safe_release(impl_->dxgi_manager);
@@ -429,7 +429,7 @@ void capture_device::set_gpu_device(void *device) {
 	if (FAILED(hr)) {
 		impl_->d3d11_device->Release();
 		impl_->d3d11_device = nullptr;
-		return;
+		return false;
 	}
 
 	hr = impl_->dxgi_manager->ResetDevice(impl_->d3d11_device, impl_->reset_token);
@@ -437,10 +437,11 @@ void capture_device::set_gpu_device(void *device) {
 		safe_release(impl_->dxgi_manager);
 		impl_->d3d11_device->Release();
 		impl_->d3d11_device = nullptr;
-		return;
+		return false;
 	}
 
 	impl_->gpu_mode = true;
+	return true;
 }
 
 std::vector<format_info> capture_device::available_formats() const {

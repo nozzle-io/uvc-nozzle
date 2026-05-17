@@ -71,7 +71,7 @@ static int run_cli(int device_index, const std::string &sender_name,
     }
 
     auto capture = uvc::create_capture_device();
-    capture->set_gpu_device(pub->get_native_device());
+    bool native_mode = capture->set_gpu_device(pub->get_native_device());
     if (!capture->open(devices[device_index])) {
         std::fprintf(stderr, "Failed to open device: %s\n", devices[device_index].name.c_str());
         return 1;
@@ -92,8 +92,12 @@ static int run_cli(int device_index, const std::string &sender_name,
         return 1;
     }
 
-    if (!capture->start([pub_ptr = pub.get()](void *buffer, uint32_t w, uint32_t h) {
-        pub_ptr->publish_frame(buffer, w, h);
+    if (!capture->start([pub_ptr = pub.get(), native_mode](void *buffer, uint32_t w, uint32_t h) {
+        if (native_mode) {
+            pub_ptr->publish_native_frame(buffer, w, h);
+        } else {
+            pub_ptr->publish_frame(buffer, w, h);
+        }
     })) {
         std::fprintf(stderr, "Failed to start capture.\n");
         return 1;

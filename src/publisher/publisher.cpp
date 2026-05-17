@@ -40,8 +40,8 @@ bool publisher::create(const std::string &name, uint32_t ring_buffer_size) {
 	return true;
 }
 
-bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
-	if (!impl_->sender || !pixel_buffer) {
+bool publisher::publish_frame(const void *pixel_data, uint32_t w, uint32_t h) {
+	if (!impl_->sender || !pixel_data) {
 		return false;
 	}
 
@@ -59,7 +59,7 @@ bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
 	}
 
 	const uint32_t src_row_bytes = w * 4;
-	const auto *src = static_cast<const uint8_t *>(pixel_buffer);
+	const auto *src = static_cast<const uint8_t *>(pixel_data);
 	auto *dst = static_cast<uint8_t *>(pixels.data);
 
 	if (pixels.row_stride_bytes == static_cast<int64_t>(src_row_bytes)) {
@@ -75,6 +75,10 @@ bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
 	nozzle_frame_unlock_writable_pixels(frame);
 	err = nozzle_sender_commit_frame(impl_->sender, frame);
 	return err == NOZZLE_OK;
+}
+
+bool publisher::publish_native_frame(void *, uint32_t, uint32_t) {
+	return false;
 }
 
 void *publisher::get_native_device() const {

@@ -36,7 +36,7 @@ public:
     bool configure(const format_info &fmt);
     bool start(std::function<void(void *pixel_buffer, uint32_t w, uint32_t h)> callback);
     void stop();
-    void set_gpu_device(void *device);
+    bool set_gpu_device(void *device);
     std::vector<format_info> available_formats() const;
     format_info default_format() const;
 

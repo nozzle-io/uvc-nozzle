@@ -133,7 +133,8 @@ void capture_device::stop() {
     }
 }
 
-void capture_device::set_gpu_device(void *) {
+bool capture_device::set_gpu_device(void *) {
+    return false;
 }
 
 std::vector<format_info> capture_device::available_formats() const {

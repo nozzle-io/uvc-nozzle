@@ -48,13 +48,13 @@ bool publisher::create(const std::string &name, uint32_t ring_buffer_size) {
 	}
 }
 
-bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
-	if (!impl_->sender || !pixel_buffer) {
+bool publisher::publish_frame(const void *pixel_data, uint32_t w, uint32_t h) {
+	if (!impl_->sender || !pixel_data) {
 		return false;
 	}
 
 	@autoreleasepool {
-		CVPixelBufferRef cv_buffer = static_cast<CVPixelBufferRef>(pixel_buffer);
+		CVPixelBufferRef cv_buffer = static_cast<CVPixelBufferRef>(const_cast<void *>(pixel_data));
 		IOSurfaceRef io_surface = CVPixelBufferGetIOSurface(cv_buffer);
 		if (!io_surface) return false;
 
@@ -82,6 +82,10 @@ bool publisher::publish_frame(void *pixel_buffer, uint32_t w, uint32_t h) {
 		[texture release];
 		return err == NOZZLE_OK;
 	}
+}
+
+bool publisher::publish_native_frame(void *native_texture, uint32_t w, uint32_t h) {
+	return publish_frame(native_texture, w, h);
 }
 
 void *publisher::get_native_device() const {

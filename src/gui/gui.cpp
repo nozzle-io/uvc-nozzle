@@ -214,7 +214,7 @@ void gui::build_ui() {
 
                 if (pub->create(name)) {
                     auto dev = create_capture_device();
-                    dev->set_gpu_device(pub->get_native_device());
+                    bool native_mode = dev->set_gpu_device(pub->get_native_device());
                     if (dev->open(devices_[selected_device_idx])) {
                         auto fmt = dev->default_format();
                         dev->configure(fmt);
@@ -235,9 +235,13 @@ void gui::build_ui() {
                         render_backend *backend_ptr = backend_.get();
 
                         session.device->start(
-                            [pub_ptr = session.pub.get(), tex_ptr, mutex_ptr, backend_ptr](
+                            [pub_ptr = session.pub.get(), tex_ptr, mutex_ptr, backend_ptr, native_mode](
                                 void *buffer, uint32_t w, uint32_t h) {
-                                pub_ptr->publish_frame(buffer, w, h);
+                                if (native_mode) {
+                                    pub_ptr->publish_native_frame(buffer, w, h);
+                                } else {
+                                    pub_ptr->publish_frame(buffer, w, h);
+                                }
                                 std::lock_guard<std::mutex> lock(*mutex_ptr);
                                 backend_ptr->update_preview_from_native(
                                     tex_ptr, buffer, w, h);
