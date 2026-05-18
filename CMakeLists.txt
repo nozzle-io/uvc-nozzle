@@ -132,7 +132,7 @@ endif()
 if(APPLE)
     set_target_properties(uvc-nozzle PROPERTIES
         MACOSX_DEPLOYMENT_TARGET 12.0
-        MACOSX_BUNDLE_GUI_IDENTIFIER "io.nozzle.uvc-nozzle"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "org.nozzle-io.uvc-nozzle"
         MACOSX_BUNDLE_BUNDLE_NAME "uvc-nozzle"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
