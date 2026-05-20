@@ -314,7 +314,7 @@ bool capture_device::configure(const format_info &fmt) {
 	return true;
 }
 
-bool capture_device::start(std::function<void(void *pixel_buffer, uint32_t w, uint32_t h)> callback) {
+bool capture_device::start(std::function<void(const captured_frame &frame)> callback) {
 	if (!impl_->reader || !callback) {
 		return false;
 	}
@@ -364,7 +364,10 @@ bool capture_device::start(std::function<void(void *pixel_buffer, uint32_t w, ui
 						ID3D11Texture2D *texture = nullptr;
 						hr = dxgi_buffer->GetResource(IID_PPV_ARGS(&texture));
 						if (SUCCEEDED(hr) && texture) {
-							cb(texture, impl_->configured_width, impl_->configured_height);
+							cb(captured_frame::d3d11_texture2d(
+								texture,
+								impl_->configured_width,
+								impl_->configured_height));
 							texture->Release();
 						}
 						dxgi_buffer->Release();
@@ -392,7 +395,10 @@ bool capture_device::start(std::function<void(void *pixel_buffer, uint32_t w, ui
 			DWORD expected = impl_->configured_width * impl_->configured_height * 4;
 			if (cur_len >= expected && impl_->frame_buffer.size() >= expected) {
 				std::memcpy(impl_->frame_buffer.data(), data, expected);
-				cb(impl_->frame_buffer.data(), impl_->configured_width, impl_->configured_height);
+				cb(captured_frame::cpu_bgra(
+					impl_->frame_buffer.data(),
+					impl_->configured_width,
+					impl_->configured_height));
 			}
 
 			buffer->Unlock();

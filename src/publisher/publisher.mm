@@ -1,6 +1,9 @@
 #include <publisher/publisher.hpp>
 
+#include <capture/capture_device.hpp>
 #include <nozzle/nozzle_c.h>
+
+#include <cstring>
 
 #import <Metal/Metal.h>
 #import <IOSurface/IOSurface.h>
@@ -48,13 +51,79 @@ bool publisher::create(const std::string &name, uint32_t ring_buffer_size) {
 	}
 }
 
-bool publisher::publish_frame(const void *pixel_data, uint32_t w, uint32_t h) {
+bool publisher::publish_frame(const captured_frame &frame) {
+	switch (frame.payload_kind) {
+		case frame_payload_kind::cpu_bgra:
+			return publish_cpu_bgra_frame(
+				frame.cpu_bgra_pixels,
+				frame.width,
+				frame.height,
+				frame.cpu_row_stride_bytes);
+		case frame_payload_kind::cv_pixel_buffer:
+			return publish_cv_pixel_buffer(frame.native_handle, frame.width, frame.height);
+		case frame_payload_kind::d3d11_texture2d:
+		case frame_payload_kind::dma_buf:
+		default:
+			return false;
+	}
+}
+
+bool publisher::publish_cpu_bgra_frame(
+	const void *pixel_data,
+	uint32_t w,
+	uint32_t h,
+	uint32_t row_stride_bytes
+) {
 	if (!impl_->sender || !pixel_data) {
+		return false;
+	}
+	if (w == 0 || h == 0) {
+		return false;
+	}
+	const uint32_t src_row_bytes = row_stride_bytes == 0 ? w * 4 : row_stride_bytes;
+	const uint32_t copy_row_bytes = w * 4;
+	if (src_row_bytes < copy_row_bytes) {
+		return false;
+	}
+
+	NozzleFrame *frame = nullptr;
+	NozzleErrorCode err = nozzle_sender_acquire_writable_frame(
+		impl_->sender, w, h, NOZZLE_FORMAT_BGRA8_UNORM, &frame);
+	if (err != NOZZLE_OK) return false;
+
+	NozzleMappedPixels pixels;
+	err = nozzle_frame_lock_writable_pixels_with_origin(
+		frame, NOZZLE_ORIGIN_TOP_LEFT, &pixels);
+	if (err != NOZZLE_OK) {
+		nozzle_frame_release(frame);
+		return false;
+	}
+
+	const auto *src = static_cast<const uint8_t *>(pixel_data);
+	auto *dst = static_cast<uint8_t *>(pixels.data);
+	if (pixels.row_stride_bytes == static_cast<int64_t>(src_row_bytes) &&
+		src_row_bytes == copy_row_bytes) {
+		std::memcpy(dst, src, static_cast<size_t>(copy_row_bytes) * h);
+	} else {
+		for (uint32_t y = 0; y < h; y++) {
+			std::memcpy(dst + y * pixels.row_stride_bytes,
+				src + y * src_row_bytes,
+				copy_row_bytes);
+		}
+	}
+
+	nozzle_frame_unlock_writable_pixels(frame);
+	err = nozzle_sender_commit_frame(impl_->sender, frame);
+	return err == NOZZLE_OK;
+}
+
+bool publisher::publish_cv_pixel_buffer(void *pixel_buffer, uint32_t w, uint32_t h) {
+	if (!impl_->sender || !pixel_buffer) {
 		return false;
 	}
 
 	@autoreleasepool {
-		CVPixelBufferRef cv_buffer = static_cast<CVPixelBufferRef>(const_cast<void *>(pixel_data));
+		CVPixelBufferRef cv_buffer = static_cast<CVPixelBufferRef>(pixel_buffer);
 		IOSurfaceRef io_surface = CVPixelBufferGetIOSurface(cv_buffer);
 		if (!io_surface) return false;
 
@@ -84,8 +153,12 @@ bool publisher::publish_frame(const void *pixel_data, uint32_t w, uint32_t h) {
 	}
 }
 
-bool publisher::publish_native_frame(void *native_texture, uint32_t w, uint32_t h) {
-	return publish_frame(native_texture, w, h);
+bool publisher::publish_d3d11_texture(void *, uint32_t, uint32_t) {
+	return false;
+}
+
+bool publisher::publish_dma_buf_frame(const captured_frame &) {
+	return false;
 }
 
 void *publisher::get_native_device() const {

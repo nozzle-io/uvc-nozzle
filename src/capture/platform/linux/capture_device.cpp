@@ -40,7 +40,7 @@ struct capture_device::impl {
 
 	std::thread capture_thread;
 	std::atomic<bool> running{false};
-	std::function<void(void *, uint32_t, uint32_t)> callback;
+	std::function<void(const captured_frame &)> callback;
 
 	~impl() { close_fd(); }
 
@@ -292,7 +292,7 @@ bool capture_device::configure(const format_info &fmt) {
 	return true;
 }
 
-bool capture_device::start(std::function<void(void *, uint32_t, uint32_t)> callback) {
+bool capture_device::start(std::function<void(const captured_frame &)> callback) {
 	if (impl_->fd < 0 || !callback) {
 		return false;
 	}
@@ -393,7 +393,7 @@ bool capture_device::start(std::function<void(void *, uint32_t, uint32_t)> callb
 					data = impl_->convert_buf.data();
 				}
 
-				impl_->callback(data, data_w, data_h);
+				impl_->callback(captured_frame::cpu_bgra(data, data_w, data_h));
 			}
 
 			if (impl_->running) {

@@ -214,7 +214,7 @@ void gui::build_ui() {
 
                 if (pub->create(name)) {
                     auto dev = create_capture_device();
-                    bool native_mode = dev->set_gpu_device(pub->get_native_device());
+                    dev->set_gpu_device(pub->get_native_device());
                     if (dev->open(devices_[selected_device_idx])) {
                         auto fmt = dev->default_format();
                         dev->configure(fmt);
@@ -235,16 +235,23 @@ void gui::build_ui() {
                         render_backend *backend_ptr = backend_.get();
 
                         session.device->start(
-                            [pub_ptr = session.pub.get(), tex_ptr, mutex_ptr, backend_ptr, native_mode](
-                                void *buffer, uint32_t w, uint32_t h) {
-                                if (native_mode) {
-                                    pub_ptr->publish_native_frame(buffer, w, h);
-                                } else {
-                                    pub_ptr->publish_frame(buffer, w, h);
-                                }
+                            [pub_ptr = session.pub.get(), tex_ptr, mutex_ptr, backend_ptr](
+                                const captured_frame &frame) {
+                                pub_ptr->publish_frame(frame);
                                 std::lock_guard<std::mutex> lock(*mutex_ptr);
-                                backend_ptr->update_preview_from_native(
-                                    tex_ptr, buffer, w, h);
+                                if (frame.payload_kind == frame_payload_kind::cpu_bgra) {
+                                    backend_ptr->update_preview_from_native(
+                                        tex_ptr,
+                                        const_cast<void *>(frame.cpu_bgra_pixels),
+                                        frame.width,
+                                        frame.height);
+                                } else if (frame.payload_kind == frame_payload_kind::cv_pixel_buffer) {
+                                    backend_ptr->update_preview_from_native(
+                                        tex_ptr,
+                                        frame.native_handle,
+                                        frame.width,
+                                        frame.height);
+                                }
                             });
 
                         sessions_.push_back(std::move(session));

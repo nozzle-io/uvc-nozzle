@@ -117,13 +117,13 @@ bool capture_device::configure(const format_info &fmt) {
     return [impl_->session configureWithWidth:fmt.width height:fmt.height fps:fmt.fps];
 }
 
-bool capture_device::start(std::function<void(void *pixel_buffer, uint32_t w, uint32_t h)> callback) {
+bool capture_device::start(std::function<void(const captured_frame &frame)> callback) {
     if (!impl_->session) {
         return false;
     }
 
     return [impl_->session startWithCallback:^(void *pb, uint32_t w, uint32_t h) {
-        callback(pb, w, h);
+        callback(captured_frame::cv_pixel_buffer(pb, w, h));
     }];
 }
 
