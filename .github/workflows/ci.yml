@@ -14,6 +14,9 @@ concurrency:
 jobs:
   build-macos:
     runs-on: macos-14
+    outputs:
+      package_root: ${{ steps.meta.outputs.package_root }}
+      package_name: ${{ steps.meta.outputs.package_name }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,19 +35,48 @@ jobs:
         run: cmake --build build --config Release --target uvc-nozzle
 
       - name: Verify universal binary
-        run: lipo -archs build/uvc-nozzle.app/Contents/MacOS/uvc-nozzle
+        run: |
+          archs=$(lipo -archs build/uvc-nozzle.app/Contents/MacOS/uvc-nozzle)
+          echo "$archs"
+          echo "$archs" | grep -q "arm64" || { echo "Missing arm64 slice"; exit 1; }
+          echo "$archs" | grep -q "x86_64" || { echo "Missing x86_64 slice"; exit 1; }
 
       - name: Codesign
         run: codesign --force --deep --sign - build/uvc-nozzle.app
 
+      - name: Prepare package metadata
+        id: meta
+        run: |
+          repo="${{ github.event.repository.name }}"
+          short_sha="${GITHUB_SHA::7}"
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            base="${repo}-${GITHUB_REF_NAME}-macos-universal"
+          elif [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            base="${repo}-latest-${short_sha}-macos-universal"
+          elif [[ "${GITHUB_REF}" == refs/heads/stable ]]; then
+            base="${repo}-stable-${short_sha}-macos-universal"
+          else
+            base="${repo}-ci-${short_sha}-macos-universal"
+          fi
+          echo "package_root=${base}" >> "$GITHUB_OUTPUT"
+          echo "package_name=${base}.zip" >> "$GITHUB_OUTPUT"
+
       - name: Package
-        run: cd build && zip -r ../uvc-nozzle-macos-universal.zip uvc-nozzle.app
+        run: |
+          cd build
+          zip -r "../${{ steps.meta.outputs.package_name }}" uvc-nozzle.app
+
+      - name: Verify package
+        run: |
+          test -f "${{ steps.meta.outputs.package_name }}"
+          unzip -l "${{ steps.meta.outputs.package_name }}" | grep -F 'uvc-nozzle.app/Contents/MacOS/uvc-nozzle'
+          unzip -l "${{ steps.meta.outputs.package_name }}" | grep -F 'uvc-nozzle.app/Contents/Info.plist'
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: uvc-nozzle-macos-universal
-          path: uvc-nozzle-macos-universal.zip
+          name: ${{ steps.meta.outputs.package_root }}
+          path: ${{ steps.meta.outputs.package_name }}
 
   build-windows:
     runs-on: windows-2022
@@ -90,44 +122,60 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: uvc-nozzle-macos-universal
+          name: ${{ needs.build-macos.outputs.package_root }}
 
-      - name: Get release tag
-        id: tag
+      - name: Verify downloaded package
         run: |
-          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          elif [[ "${GITHUB_REF}" == refs/heads/main ]]; then
-            echo "tag=latest" >> "$GITHUB_OUTPUT"
-          else
-            echo "unsupported release ref: ${GITHUB_REF}" >&2
-            exit 1
-          fi
+          test -f "${{ needs.build-macos.outputs.package_name }}"
+          unzip -l "${{ needs.build-macos.outputs.package_name }}" | grep -F 'uvc-nozzle.app/Contents/MacOS/uvc-nozzle'
 
       - name: Delete old latest release
-        if: steps.tag.outputs.tag == 'latest'
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view latest --repo ${{ github.repository }} >/dev/null 2>&1; then
-            gh release delete latest --yes --repo ${{ github.repository }}
+          if gh release view latest --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release delete latest --yes --repo "${GITHUB_REPOSITORY}"
           else
             echo "No existing latest release to delete"
           fi
 
-      - name: Create release
+      - name: Check versioned release asset does not exist
+        if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [[ "${{ steps.tag.outputs.tag }}" == "latest" ]]; then
-            gh release create latest uvc-nozzle-macos-universal.zip \
-              --repo ${{ github.repository }} \
+          asset="${{ needs.build-macos.outputs.package_name }}"
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name' > existing-assets.txt 2>/dev/null; then
+            if grep -Fx "$asset" existing-assets.txt; then
+              echo "versioned release asset already exists: $asset" >&2
+              exit 1
+            fi
+          else
+            echo "No existing release for ${GITHUB_REF_NAME}; create step will create it."
+          fi
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          package="${{ needs.build-macos.outputs.package_name }}"
+          if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
+            gh release create latest "$package" \
+              --repo "${GITHUB_REPOSITORY}" \
               --title "Latest development snapshot" \
               --prerelease \
-              --notes "Development snapshot from main. Commit: ${{ github.sha }}"
+              --notes "Development snapshot from main. Commit: ${GITHUB_SHA}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+              gh release upload "${GITHUB_REF_NAME}" "$package" --repo "${GITHUB_REPOSITORY}"
+            else
+              gh release create "${GITHUB_REF_NAME}" "$package" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "${GITHUB_REF_NAME}" \
+                --notes "Release ${GITHUB_REF_NAME}"
+            fi
           else
-            gh release create "${{ steps.tag.outputs.tag }}" uvc-nozzle-macos-universal.zip \
-              --repo ${{ github.repository }} \
-              --title "${{ steps.tag.outputs.tag }}" \
-              --notes "Release ${{ steps.tag.outputs.tag }}"
+            echo "unsupported release ref: ${GITHUB_REF}" >&2
+            exit 1
           fi
