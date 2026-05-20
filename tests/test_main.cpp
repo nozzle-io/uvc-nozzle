@@ -59,6 +59,28 @@ TEST_CASE("captured_frame carries explicit DMA-BUF metadata", "[capture][dispatc
     REQUIRE(frame.dma_buf.planes[0].stride == 128);
 }
 
+TEST_CASE("publisher dispatch rejects unsupported native payload kinds", "[publisher][dispatch]") {
+    uvc::publisher pub;
+    void *native = reinterpret_cast<void *>(0x1234);
+    uvc::dma_buf_frame dmabuf{};
+    dmabuf.fd = 7;
+    dmabuf.fourcc = 875713089;
+    dmabuf.plane_count = 1;
+    dmabuf.planes[0].stride = 128;
+
+#if defined(_WIN32)
+    REQUIRE_FALSE(pub.publish_frame(uvc::captured_frame::cv_pixel_buffer(native, 4, 4)));
+    REQUIRE_FALSE(pub.publish_frame(uvc::captured_frame::dma_buf_native(dmabuf, 4, 4)));
+#elif defined(__APPLE__)
+    REQUIRE_FALSE(pub.publish_frame(uvc::captured_frame::d3d11_texture2d(native, 4, 4)));
+    REQUIRE_FALSE(pub.publish_frame(uvc::captured_frame::dma_buf_native(dmabuf, 4, 4)));
+#else
+    REQUIRE_FALSE(pub.publish_frame(uvc::captured_frame::cv_pixel_buffer(native, 4, 4)));
+    REQUIRE_FALSE(pub.publish_frame(uvc::captured_frame::d3d11_texture2d(native, 4, 4)));
+    REQUIRE_FALSE(pub.publish_frame(uvc::captured_frame::dma_buf_native(dmabuf, 4, 4)));
+#endif
+}
+
 TEST_CASE("enumerate returns without crash", "[capture]") {
     auto devices = uvc::capture_device::enumerate();
     REQUIRE(devices.size() >= 0);

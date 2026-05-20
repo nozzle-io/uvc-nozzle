@@ -15,6 +15,27 @@
 
 namespace uvc {
 
+namespace {
+
+struct nozzle_frame_guard {
+	NozzleFrame *frame{nullptr};
+
+	explicit nozzle_frame_guard(NozzleFrame *frame)
+	: frame{frame}
+	{}
+
+	~nozzle_frame_guard() {
+		if (frame) {
+			nozzle_frame_release(frame);
+		}
+	}
+
+	nozzle_frame_guard(const nozzle_frame_guard &) = delete;
+	nozzle_frame_guard &operator=(const nozzle_frame_guard &) = delete;
+};
+
+} // anonymous namespace
+
 struct publisher::impl {
 	NozzleSender *sender{nullptr};
 	ID3D11Device *d3d_device{nullptr};
@@ -134,12 +155,12 @@ bool publisher::publish_cpu_bgra_frame(
 	NozzleErrorCode err = nozzle_sender_acquire_writable_frame(
 		impl_->sender, w, h, NOZZLE_FORMAT_BGRA8_UNORM, &frame);
 	if (err != NOZZLE_OK) return false;
+	nozzle_frame_guard frame_guard{frame};
 
 	NozzleMappedPixels pixels;
 	err = nozzle_frame_lock_writable_pixels_with_origin(
 		frame, NOZZLE_ORIGIN_TOP_LEFT, &pixels);
 	if (err != NOZZLE_OK) {
-		nozzle_frame_release(frame);
 		return false;
 	}
 
