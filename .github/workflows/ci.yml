@@ -2,10 +2,14 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, stable]
     tags: ['v*']
   pull_request:
-    branches: [main]
+    branches: [main, stable]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' && github.event_name != 'release' }}
 
 jobs:
   build-macos:
@@ -79,7 +83,7 @@ jobs:
 
   release:
     needs: [build-macos, build-windows, build-linux]
-    if: github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: macos-14
     permissions:
       contents: write
@@ -93,15 +97,23 @@ jobs:
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
             echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
-          else
+          elif [[ "${GITHUB_REF}" == refs/heads/main ]]; then
             echo "tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "unsupported release ref: ${GITHUB_REF}" >&2
+            exit 1
           fi
 
       - name: Delete old latest release
         if: steps.tag.outputs.tag == 'latest'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release delete latest --yes --repo ${{ github.repository }} || true
+        run: |
+          if gh release view latest --repo ${{ github.repository }} >/dev/null 2>&1; then
+            gh release delete latest --yes --repo ${{ github.repository }}
+          else
+            echo "No existing latest release to delete"
+          fi
 
       - name: Create release
         env:
@@ -110,9 +122,9 @@ jobs:
           if [[ "${{ steps.tag.outputs.tag }}" == "latest" ]]; then
             gh release create latest uvc-nozzle-macos-universal.zip \
               --repo ${{ github.repository }} \
-              --title "Latest Build" \
+              --title "Latest development snapshot" \
               --prerelease \
-              --notes "Automated latest build from main"
+              --notes "Development snapshot from main. Commit: ${{ github.sha }}"
           else
             gh release create "${{ steps.tag.outputs.tag }}" uvc-nozzle-macos-universal.zip \
               --repo ${{ github.repository }} \
