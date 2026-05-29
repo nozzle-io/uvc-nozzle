@@ -109,6 +109,7 @@ bool publisher::publish_cpu_bgra_frame(
 	err = nozzle_frame_lock_writable_pixels_with_origin(
 		frame, NOZZLE_ORIGIN_TOP_LEFT, &pixels);
 	if (err != NOZZLE_OK) {
+		(void)nozzle_sender_discard_frame(impl_->sender, frame);
 		return false;
 	}
 
@@ -128,8 +129,7 @@ bool publisher::publish_cpu_bgra_frame(
 
 	err = nozzle_frame_unlock_writable_pixels_checked(frame);
 	if (err != NOZZLE_OK) {
-		// Commit rejects failed-unlock frames and releases the sender slot.
-		(void)nozzle_sender_commit_frame(impl_->sender, frame);
+		(void)nozzle_sender_discard_frame(impl_->sender, frame);
 		return false;
 	}
 	err = nozzle_sender_commit_frame(impl_->sender, frame);
