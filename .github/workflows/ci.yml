@@ -113,69 +113,121 @@ jobs:
       - name: Tests
         run: ./build/uvc_tests --reporter compact
 
+
   release:
-    needs: [build-macos, build-windows, build-linux]
+    needs: [build-macos]
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    runs-on: macos-14
+    runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Move latest tag
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f latest "$GITHUB_SHA"
+          git push origin refs/tags/latest --force
+
       - uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build-macos.outputs.package_root }}
 
-      - name: Verify downloaded package
-        run: |
-          test -f "${{ needs.build-macos.outputs.package_name }}"
-          unzip -l "${{ needs.build-macos.outputs.package_name }}" | grep -F 'uvc-nozzle.app/Contents/MacOS/uvc-nozzle'
-
-      - name: Delete old latest release
-        if: github.ref == 'refs/heads/main'
+      - name: Verify downloaded packages
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_MACOS: ${{ needs.build-macos.outputs.package_name }}
         run: |
-          if gh release view latest --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            gh release delete latest --yes --repo "${GITHUB_REPOSITORY}"
-          else
-            echo "No existing latest release to delete"
-          fi
+          test -f "$PACKAGE_MACOS"
+
+      - name: Generate checksums and manifest
+        env:
+          APP_ID: uvc-nozzle
+          EXPECTED_PLATFORMS: "macos-universal"
+          PACKAGE_MACOS: ${{ needs.build-macos.outputs.package_name }}
+        run: |
+          packages=("$PACKAGE_MACOS")
+          for package in "${packages[@]}"; do
+            test -f "$package"
+          done
+          : > SHA256SUMS
+          for package in "${packages[@]}"; do
+            checksum=$(sha256sum "$package" | awk '{print $1}')
+            printf '%s  %s\n' "$checksum" "$(basename "$package")" >> SHA256SUMS
+          done
+          python3 scripts/write-release-manifest.py --app-id "$APP_ID" --expected-platforms macos-universal --output manifest.json "${packages[@]}"
+          cat SHA256SUMS
+          cat manifest.json
 
       - name: Check versioned release asset does not exist
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_MACOS: ${{ needs.build-macos.outputs.package_name }}
         run: |
-          asset="${{ needs.build-macos.outputs.package_name }}"
-          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name' > existing-assets.txt 2>/dev/null; then
-            if grep -Fx "$asset" existing-assets.txt; then
-              echo "versioned release asset already exists: $asset" >&2
-              exit 1
-            fi
+          built_packages=("$PACKAGE_MACOS")
+          packages=("${built_packages[@]}" SHA256SUMS manifest.json)
+          release_tag="${GITHUB_REF_NAME}"
+          if release_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${release_tag}" --jq .id 2>/dev/null); then
+            gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets" --jq '.[].name' > existing-assets.txt
+            for asset in "${packages[@]}"; do
+              if grep -Fx "$asset" existing-assets.txt; then
+                echo "versioned release asset already exists: $asset" >&2
+                exit 1
+              fi
+            done
           else
-            echo "No existing release for ${GITHUB_REF_NAME}; create step will create it."
+            echo "No existing release for $release_tag; create step will create it."
           fi
 
       - name: Create or update release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGE_MACOS: ${{ needs.build-macos.outputs.package_name }}
         run: |
-          package="${{ needs.build-macos.outputs.package_name }}"
+          built_packages=("$PACKAGE_MACOS")
+          assets=("${built_packages[@]}" SHA256SUMS manifest.json)
           if [[ "${GITHUB_REF}" == refs/heads/main ]]; then
-            gh release create latest "$package" \
-              --repo "${GITHUB_REPOSITORY}" \
-              --title "Latest development snapshot" \
-              --prerelease \
-              --notes "Development snapshot from main. Commit: ${GITHUB_SHA}"
-          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-              gh release upload "${GITHUB_REF_NAME}" "$package" --repo "${GITHUB_REPOSITORY}"
-            else
-              gh release create "${GITHUB_REF_NAME}" "$package" \
+            release_tag="latest"
+            title="Latest development snapshot"
+            notes="Mutable development snapshot from main. Commit: ${GITHUB_SHA}"
+            if release_id=$(gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${release_tag}" --jq .id 2>/dev/null); then
+              gh api "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets" --jq '.[].id' > release-asset-ids.txt
+              while IFS= read -r asset_id; do
+                if [ -n "$asset_id" ]; then
+                  gh api -X DELETE "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+                fi
+              done < release-asset-ids.txt
+              gh release edit "$release_tag" \
                 --repo "${GITHUB_REPOSITORY}" \
-                --title "${GITHUB_REF_NAME}" \
-                --notes "Release ${GITHUB_REF_NAME}"
+                --title "$title" \
+                --notes "$notes" \
+                --prerelease
+              gh release upload "$release_tag" "${assets[@]}" --repo "${GITHUB_REPOSITORY}"
+            else
+              gh release create "$release_tag" "${assets[@]}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --verify-tag \
+                --title "$title" \
+                --notes "$notes" \
+                --prerelease
+            fi
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            release_tag="${GITHUB_REF_NAME}"
+            if gh api "repos/${GITHUB_REPOSITORY}/releases/tags/${release_tag}" --jq .id >/dev/null 2>&1; then
+              gh release upload "$release_tag" "${assets[@]}" --repo "${GITHUB_REPOSITORY}"
+            else
+              gh release create "$release_tag" "${assets[@]}" \
+                --repo "${GITHUB_REPOSITORY}" \
+                --title "$release_tag" \
+                --notes "Release $release_tag"
             fi
           else
             echo "unsupported release ref: ${GITHUB_REF}" >&2
             exit 1
           fi
+          echo "Release URL and uploaded assets:"
+          gh release view "$release_tag" --repo "${GITHUB_REPOSITORY}" --json url,assets --jq '.url, (.assets[].name)'
