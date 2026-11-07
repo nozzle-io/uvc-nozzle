@@ -1,3 +1,5 @@
+#include "windows_utf8_argv.hpp"
+
 #include <capture/capture_device.hpp>
 #include <gui/gui.hpp>
 #include <publisher/publisher.hpp>
@@ -112,7 +114,18 @@ static int run_cli(int device_index, const std::string &sender_name,
     return 0;
 }
 
+#if defined(_WIN32)
+int wmain(int argc, wchar_t **wide_argv) {
+    windows_utf8_argv converted;
+    if(!converted.assign(argc, wide_argv)) {
+        std::fprintf(stderr, "Invalid UTF-16 command line (Win32 error %lu)\n",
+            static_cast<unsigned long>(GetLastError()));
+        return 2;
+    }
+    char **argv = converted.data();
+#else
 int main(int argc, char *argv[]) {
+#endif
     bool list_mode = false;
     bool force_gui = false;
     int device_index = -1;

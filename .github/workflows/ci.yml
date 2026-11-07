@@ -94,6 +94,13 @@ jobs:
       - name: Tests
         run: .\build\Release\uvc_tests.exe --reporter compact
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Windows Unicode CLI parser (no camera)
+        timeout-minutes: 2
+        run: python tests/windows_cli_utf8.py --exe build/Release/uvc-nozzle.exe
+
   build-linux:
     runs-on: ubuntu-22.04
     steps:

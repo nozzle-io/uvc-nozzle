@@ -105,6 +105,10 @@ else()
     )
 endif()
 
+if(MINGW)
+    target_link_options(uvc-nozzle PRIVATE -municode)
+endif()
+
 target_include_directories(uvc-nozzle PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/nozzle/include
